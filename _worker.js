@@ -1,9 +1,9 @@
 import { AwsClient } from "aws4fetch";
 
-const HOMEPAGE = "https://github.com/milkey-mouse/git-lfs-s3-proxy";
+const HOMEPAGE = "https://github.com/aibtcdev/git-lfs-s3-proxy";
 const EXPIRY = 3600;
-
 const MIME = "application/vnd.git-lfs+json";
+const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for S3
 
 const METHOD_FOR = {
   upload: "PUT",
@@ -111,7 +111,7 @@ async function fetch(req, env) {
     status: 200,
     headers: {
       "Cache-Control": "no-store",
-      "Content-Type": "application/vnd.git-lfs+json",
+      "Content-Type": MIME,
     },
   });
 }
