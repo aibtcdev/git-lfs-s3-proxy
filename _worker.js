@@ -110,7 +110,7 @@ async function handleMultipartUpload(s3, bucket, key, size) {
       partCount,
     };
   } catch (error) {
-    console.error(`Error in handleMultipartUpload for ${oid}:`, error);
+    console.error(`Error in handleMultipartUpload for ${key}:`, error);
     if (error.name === "AbortError") {
       throw new Error("Multipart upload initialization timed out");
     } else if (error.message.includes("AccessDenied")) {
