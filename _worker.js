@@ -52,6 +52,16 @@ async function initiateMultipartUpload(s3, bucket, key) {
     const url = await sign(s3, bucket, key, "POST", "uploads");
     console.log(`Initiating multipart upload: POST ${url}`);
 
+    let newUrl = "";
+    try {
+      newUrl = new URL(url);
+    } catch (error) {
+      console.error(
+        `Error in initiateMultipartUpload for bucket ${bucket}, key ${key} for URL ${url}:`,
+        error
+      );
+      throw error;
+    }
     const response = await fetch(url, {
       method: "POST",
       headers: {
