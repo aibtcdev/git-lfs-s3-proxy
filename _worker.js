@@ -40,6 +40,47 @@ function parseAuthorization(req) {
   return { user: decoded.slice(0, index), pass: decoded.slice(index + 1) };
 }
 
+async function initiateMultipartUpload(s3, bucket, key) {
+  const url = await sign(s3, bucket, key, "POST", "uploads=");
+  const response = await fetch(url);
+  const xml = await response.text();
+  const uploadId = xml.match(/<UploadId>(.*?)<\/UploadId>/)[1];
+  return uploadId;
+}
+
+async function getSignedUrlForPart(s3, bucket, key, uploadId, partNumber) {
+  return sign(
+    s3,
+    bucket,
+    key,
+    "PUT",
+    `partNumber=${partNumber}&uploadId=${uploadId}&`
+  );
+}
+
+async function completeMultipartUpload(s3, bucket, key, uploadId, parts) {
+  const url = await sign(s3, bucket, key, "POST", `uploadId=${uploadId}&`);
+  const xml = `
+    <CompleteMultipartUpload>
+      ${parts
+        .map(
+          ({ PartNumber, ETag }) => `
+        <Part>
+          <PartNumber>${PartNumber}</PartNumber>
+          <ETag>${ETag}</ETag>
+        </Part>
+      `
+        )
+        .join("")}
+    </CompleteMultipartUpload>
+  `;
+  const response = await fetch(url, {
+    method: "POST",
+    body: xml,
+  });
+  return response.ok;
+}
+
 async function fetch(req, env) {
   const url = new URL(req.url);
 
@@ -93,17 +134,45 @@ async function fetch(req, env) {
   const response = JSON.stringify({
     transfer: "basic",
     objects: await Promise.all(
-      objects.map(async ({ oid, size }) => ({
-        oid,
-        size,
-        authenticated: true,
-        actions: {
-          [operation]: {
-            href: await sign(s3, bucket, oid, method),
-            expires_in,
-          },
-        },
-      }))
+      objects.map(async ({ oid, size }) => {
+        if (operation === "upload" && size > PART_SIZE) {
+          // initiate multipart upload
+          const uploadId = await initiateMultipartUpload(s3, bucket, oid);
+          const partCount = Math.ceil(size / PART_SIZE);
+          const parts = await Promise.all(
+            Array.from({ length: partCount }, (_, i) =>
+              getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
+            )
+          );
+
+          return {
+            oid,
+            size,
+            authenticated: true,
+            actions: {
+              upload: {
+                href: parts[0], // URL for the first part
+                header: {
+                  "Upload-ID": uploadId,
+                  "Part-Count": partCount.toString(),
+                },
+              },
+            },
+          };
+        } else {
+          return {
+            oid,
+            size,
+            authenticated: true,
+            actions: {
+              [operation]: {
+                href: await sign(s3, bucket, oid, method),
+                expires_in: EXPIRY,
+              },
+            },
+          };
+        }
+      })
     ),
   });
 
