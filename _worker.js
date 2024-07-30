@@ -46,28 +46,41 @@ async function initiateMultipartUpload(s3, bucket, key) {
 }
 
 async function handleMultipartUpload(s3, bucket, oid, size) {
-  const uploadId = await initiateMultipartUpload(s3, bucket, oid);
-  const partCount = Math.ceil(size / PART_SIZE);
+  try {
+    const uploadId = await initiateMultipartUpload(s3, bucket, oid);
+    const partCount = Math.ceil(size / PART_SIZE);
 
-  const partUrls = await Promise.all(
-    Array.from({ length: partCount }, (_, i) =>
-      getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
-    )
-  );
+    const partUrls = await Promise.all(
+      Array.from({ length: partCount }, (_, i) =>
+        getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
+      )
+    );
 
-  const completeUrl = await getSignedUrlForCompletion(
-    s3,
-    bucket,
-    oid,
-    uploadId
-  );
+    const completeUrl = await getSignedUrlForCompletion(
+      s3,
+      bucket,
+      oid,
+      uploadId
+    );
 
-  return {
-    uploadId,
-    partUrls,
-    completeUrl,
-    partCount,
-  };
+    return {
+      uploadId,
+      partUrls,
+      completeUrl,
+      partCount,
+    };
+  } catch (error) {
+    console.error(`Error in handleMultipartUpload for ${oid}:`, error);
+    if (error.name === "AbortError") {
+      throw new Error("Multipart upload initialization timed out");
+    } else if (error.message.includes("InvalidAccessKeyId")) {
+      throw new Error("Invalid S3 credentials");
+    } else if (error.message.includes("NoSuchBucket")) {
+      throw new Error("S3 bucket not found");
+    } else {
+      throw new Error("Failed to initialize multipart upload");
+    }
+  }
 }
 
 async function getSignedUrlForPart(s3, bucket, key, uploadId, partNumber) {
@@ -159,6 +172,7 @@ async function fetch(req, env) {
               multipart: {
                 partSize: PART_SIZE,
                 partCount: partCount,
+                uploadId: uploadId,
               },
             };
           } else {
@@ -190,7 +204,8 @@ async function fetch(req, env) {
             oid,
             size,
             error: {
-              message: "Internal server error processing object",
+              message:
+                error.message || "Internal server error processing object",
             },
           };
         }
