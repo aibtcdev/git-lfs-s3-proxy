@@ -5,14 +5,24 @@ const EXPIRY = 3600;
 const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for S3
 
 async function sign(s3, bucket, path, method, query = "") {
-  const info = { method };
-  const signed = await s3.sign(
-    new Request(
-      `https://${bucket}/${path}?${query}X-Amz-Expires=${EXPIRY}`,
-      info
-    ),
-    { aws: { signQuery: true } }
-  );
+  const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
+  const url = `https://${bucket}/${encodedPath}`;
+  const fullUrl = query ? `${url}?${query}` : url;
+
+  const info = {
+    method,
+    headers: {
+      "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+    },
+  };
+
+  console.log(`Signing request: ${method} ${fullUrl}`);
+
+  const signed = await s3.sign(new Request(fullUrl, info), {
+    aws: { signQuery: true },
+  });
+
+  console.log(`Signed URL: ${signed.url}`);
   return signed.url;
 }
 
@@ -39,18 +49,28 @@ function parseAuthorization(req) {
 
 async function initiateMultipartUpload(s3, bucket, key) {
   try {
-    const url = await sign(s3, bucket, key, "POST", "uploads=");
-    const response = await fetch(url);
+    const url = await sign(s3, bucket, key, "POST", "uploads");
+    console.log(`Initiating multipart upload: POST ${url}`);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`S3 error response: ${errorText}`);
+      console.error(`Response headers:`, response.headers);
       throw new Error(
         `S3 responded with status ${response.status}: ${errorText}`
       );
     }
 
     const xml = await response.text();
+    console.log(`S3 response:`, xml);
+
     const uploadId = xml.match(/<UploadId>(.*?)<\/UploadId>/)[1];
     if (!uploadId) {
       throw new Error("Failed to extract UploadId from S3 response");
