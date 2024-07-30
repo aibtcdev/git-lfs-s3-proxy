@@ -2,13 +2,7 @@ import { AwsClient } from "aws4fetch";
 
 const HOMEPAGE = "https://github.com/aibtcdev/git-lfs-s3-proxy";
 const EXPIRY = 3600;
-const MIME = "application/vnd.git-lfs+json";
 const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for S3
-
-const METHOD_FOR = {
-  upload: "PUT",
-  download: "GET",
-};
 
 async function sign(s3, bucket, path, method, query = "") {
   const info = { method };
