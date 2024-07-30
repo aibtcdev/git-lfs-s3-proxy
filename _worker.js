@@ -38,11 +38,31 @@ function parseAuthorization(req) {
 }
 
 async function initiateMultipartUpload(s3, bucket, key) {
-  const url = await sign(s3, bucket, key, "POST", "uploads=");
-  const response = await fetch(url);
-  const xml = await response.text();
-  const uploadId = xml.match(/<UploadId>(.*?)<\/UploadId>/)[1];
-  return uploadId;
+  try {
+    const url = await sign(s3, bucket, key, "POST", "uploads=");
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`S3 error response: ${errorText}`);
+      throw new Error(
+        `S3 responded with status ${response.status}: ${errorText}`
+      );
+    }
+
+    const xml = await response.text();
+    const uploadId = xml.match(/<UploadId>(.*?)<\/UploadId>/)[1];
+    if (!uploadId) {
+      throw new Error("Failed to extract UploadId from S3 response");
+    }
+    return uploadId;
+  } catch (error) {
+    console.error(
+      `Error in initiateMultipartUpload for bucket ${bucket}, key ${key}:`,
+      error
+    );
+    throw error;
+  }
 }
 
 async function handleMultipartUpload(s3, bucket, oid, size) {
@@ -73,12 +93,18 @@ async function handleMultipartUpload(s3, bucket, oid, size) {
     console.error(`Error in handleMultipartUpload for ${oid}:`, error);
     if (error.name === "AbortError") {
       throw new Error("Multipart upload initialization timed out");
-    } else if (error.message.includes("InvalidAccessKeyId")) {
-      throw new Error("Invalid S3 credentials");
+    } else if (error.message.includes("AccessDenied")) {
+      throw new Error("Access denied. Check S3 credentials and permissions.");
     } else if (error.message.includes("NoSuchBucket")) {
-      throw new Error("S3 bucket not found");
+      throw new Error("S3 bucket not found. Check bucket name and region.");
+    } else if (error.message.includes("NetworkError")) {
+      throw new Error(
+        "Network error. Check your internet connection and try again."
+      );
     } else {
-      throw new Error("Failed to initialize multipart upload");
+      throw new Error(
+        `Failed to initialize multipart upload: ${error.message}`
+      );
     }
   }
 }
