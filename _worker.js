@@ -6,8 +6,8 @@ const EXPIRY = 3600;
 const MIME = "application/vnd.git-lfs+json";
 
 const METHOD_FOR = {
-  "upload": "PUT",
-  "download": "GET",
+  upload: "PUT",
+  download: "GET",
 };
 
 async function sign(s3, bucket, path, method) {
@@ -30,7 +30,7 @@ function parseAuthorization(req) {
     throw new Response(null, { status: 400 });
   }
 
-  const buffer = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+  const buffer = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
   const decoded = new TextDecoder().decode(buffer).normalize();
   const index = decoded.indexOf(":");
   if (index === -1 || /[\0-\x1F\x7F]/.test(decoded)) {
@@ -47,7 +47,7 @@ async function fetch(req, env) {
     if (req.method === "GET") {
       return Response.redirect(HOMEPAGE, 302);
     } else {
-      return new Response(null, { status: 405, headers: { "Allow": "GET" } });
+      return new Response(null, { status: 405, headers: { Allow: "GET" } });
     }
   }
 
@@ -56,7 +56,7 @@ async function fetch(req, env) {
   }
 
   if (req.method !== "POST") {
-    return new Response(null, { status: 405, headers: { "Allow": "POST" } });
+    return new Response(null, { status: 405, headers: { Allow: "POST" } });
   }
 
   // in practice, we'd rather not break out-of-spec clients not setting these
@@ -92,13 +92,19 @@ async function fetch(req, env) {
   const method = METHOD_FOR[operation];
   const response = JSON.stringify({
     transfer: "basic",
-    objects: await Promise.all(objects.map(async ({ oid, size }) => ({
-      oid, size,
-      authenticated: true,
-      actions: {
-        [operation]: { href: await sign(s3, bucket, oid, method), expires_in },
-      },
-    }))),
+    objects: await Promise.all(
+      objects.map(async ({ oid, size }) => ({
+        oid,
+        size,
+        authenticated: true,
+        actions: {
+          [operation]: {
+            href: await sign(s3, bucket, oid, method),
+            expires_in,
+          },
+        },
+      }))
+    ),
   });
 
   return new Response(response, {
