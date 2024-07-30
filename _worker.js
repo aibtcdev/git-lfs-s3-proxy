@@ -85,21 +85,21 @@ async function initiateMultipartUpload(s3, bucket, key) {
   }
 }
 
-async function handleMultipartUpload(s3, bucket, oid, size) {
+async function handleMultipartUpload(s3, bucket, key, size) {
   try {
-    const uploadId = await initiateMultipartUpload(s3, bucket, oid);
+    const uploadId = await initiateMultipartUpload(s3, bucket, key);
     const partCount = Math.ceil(size / PART_SIZE);
 
     const partUrls = await Promise.all(
       Array.from({ length: partCount }, (_, i) =>
-        getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
+        getSignedUrlForPart(s3, bucket, key, uploadId, i + 1)
       )
     );
 
     const completeUrl = await getSignedUrlForCompletion(
       s3,
       bucket,
-      oid,
+      key,
       uploadId
     );
 
@@ -182,7 +182,9 @@ async function fetch(req, env) {
     }
 
     const s3 = new AwsClient(s3Options);
-    const bucket = segments.slice(bucketIdx).join("/");
+    // const bucket = segments.slice(bucketIdx).join("/");
+    const bucket = segments[bucketIdx]; // 'bucket.aibtc.dev'
+    const prefix = segments.slice(bucketIdx + 1).join("/"); // 'aibtcdev-communications'
     const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
     const { objects, operation } = await req.json();
@@ -191,8 +193,9 @@ async function fetch(req, env) {
       objects.map(async ({ oid, size }) => {
         try {
           if (operation === "upload" && size > PART_SIZE) {
+            const key = `${prefix}/${oid}`;
             const { uploadId, partUrls, completeUrl, partCount } =
-              await handleMultipartUpload(s3, bucket, oid, size);
+              await handleMultipartUpload(s3, bucket, key, size);
 
             return {
               oid,
@@ -225,7 +228,7 @@ async function fetch(req, env) {
             const href = await sign(
               s3,
               bucket,
-              oid,
+              key,
               operation === "upload" ? "PUT" : "GET"
             );
             return {
