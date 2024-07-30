@@ -10,10 +10,13 @@ const METHOD_FOR = {
   download: "GET",
 };
 
-async function sign(s3, bucket, path, method) {
+async function sign(s3, bucket, path, method, query = "") {
   const info = { method };
   const signed = await s3.sign(
-    new Request(`https://${bucket}/${path}?X-Amz-Expires=${EXPIRY}`, info),
+    new Request(
+      `https://${bucket}/${path}?${query}X-Amz-Expires=${EXPIRY}`,
+      info
+    ),
     { aws: { signQuery: true } }
   );
   return signed.url;
@@ -58,29 +61,9 @@ async function getSignedUrlForPart(s3, bucket, key, uploadId, partNumber) {
   );
 }
 
-async function completeMultipartUpload(s3, bucket, key, uploadId, parts) {
-  const url = await sign(s3, bucket, key, "POST", `uploadId=${uploadId}&`);
-  const xml = `
-    <CompleteMultipartUpload>
-      ${parts
-        .map(
-          ({ PartNumber, ETag }) => `
-        <Part>
-          <PartNumber>${PartNumber}</PartNumber>
-          <ETag>${ETag}</ETag>
-        </Part>
-      `
-        )
-        .join("")}
-    </CompleteMultipartUpload>
-  `;
-  const response = await fetch(url, {
-    method: "POST",
-    body: xml,
-  });
-  return response.ok;
+async function getSignedUrlForCompletion(s3, bucket, key, uploadId) {
+  return sign(s3, bucket, key, "POST", `uploadId=${uploadId}&`);
 }
-
 async function fetch(req, env) {
   const url = new URL(req.url);
 
@@ -100,12 +83,6 @@ async function fetch(req, env) {
     return new Response(null, { status: 405, headers: { Allow: "POST" } });
   }
 
-  // in practice, we'd rather not break out-of-spec clients not setting these
-  /*if (!req.headers.get("Accept").startsWith(MIME)
-    || !req.headers.get("Content-Type").startsWith(MIME)) {
-    return new Response(null, { status: 406 });
-  }*/
-
   const { user, pass } = parseAuthorization(req);
   let s3Options = { accessKeyId: user, secretAccessKey: pass };
 
@@ -120,7 +97,6 @@ async function fetch(req, env) {
       const key = decodeURIComponent(segment.slice(0, sliceIdx));
       const val = decodeURIComponent(segment.slice(sliceIdx + 1));
       s3Options[key] = val;
-
       bucketIdx++;
     }
   }
@@ -130,7 +106,6 @@ async function fetch(req, env) {
   const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
   const { objects, operation } = await req.json();
-  const method = METHOD_FOR[operation];
   const response = JSON.stringify({
     transfer: "basic",
     objects: await Promise.all(
@@ -139,10 +114,20 @@ async function fetch(req, env) {
           // initiate multipart upload
           const uploadId = await initiateMultipartUpload(s3, bucket, oid);
           const partCount = Math.ceil(size / PART_SIZE);
-          const parts = await Promise.all(
+
+          // generate signed URLs for all parts
+          const partUrls = await Promise.all(
             Array.from({ length: partCount }, (_, i) =>
               getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
             )
+          );
+
+          // generate signed URL for completing the multipart upload
+          const completeUrl = await getSignedUrlForCompletion(
+            s3,
+            bucket,
+            oid,
+            uploadId
           );
 
           return {
@@ -151,23 +136,44 @@ async function fetch(req, env) {
             authenticated: true,
             actions: {
               upload: {
-                href: parts[0], // URL for the first part
+                href: partUrls[0],
                 header: {
-                  "Upload-ID": uploadId,
-                  "Part-Count": partCount.toString(),
+                  "Content-Type": "application/octet-stream",
                 },
+                expires_in: expires_in,
               },
+              verify: {
+                href: completeUrl,
+                header: {
+                  "Content-Type": "application/xml",
+                },
+                expires_in: expires_in,
+              },
+            },
+            error: {
+              code: 202,
+              message: "Large file detected, using multipart upload",
             },
           };
         } else {
+          const href = await sign(
+            s3,
+            bucket,
+            oid,
+            operation === "upload" ? "PUT" : "GET"
+          );
           return {
             oid,
             size,
             authenticated: true,
             actions: {
               [operation]: {
-                href: await sign(s3, bucket, oid, method),
-                expires_in: expires_in,
+                href,
+                header: {
+                  "Content-Type":
+                    operation === "upload" ? "application/octet-stream" : "",
+                },
+                expires_in,
               },
             },
           };
@@ -180,7 +186,7 @@ async function fetch(req, env) {
     status: 200,
     headers: {
       "Cache-Control": "no-store",
-      "Content-Type": MIME,
+      "Content-Type": "application/vnd.git-lfs+json",
     },
   });
 }
