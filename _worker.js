@@ -167,7 +167,7 @@ async function fetch(req, env) {
             actions: {
               [operation]: {
                 href: await sign(s3, bucket, oid, method),
-                expires_in: EXPIRY,
+                expires_in: expires_in,
               },
             },
           };
