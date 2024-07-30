@@ -6,8 +6,8 @@ const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for S3
 
 async function sign(s3, bucket, path, method, query = "") {
   const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
-  const url = `https://${bucket}/${encodedPath}`;
-  const fullUrl = query ? `${url}?${query}` : url;
+  const encodedQuery = query ? `?${encodeURIComponent(query)}` : "";
+  const url = `https://${bucket}/${encodedPath}${encodedQuery}`;
 
   const info = {
     method,
@@ -16,9 +16,9 @@ async function sign(s3, bucket, path, method, query = "") {
     },
   };
 
-  console.log(`Signing request: ${method} ${fullUrl}`);
+  console.log(`Signing request: ${method} ${url}`);
 
-  const signed = await s3.sign(new Request(fullUrl, info), {
+  const signed = await s3.sign(new Request(url, info), {
     aws: { signQuery: true },
   });
 
