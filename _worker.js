@@ -45,6 +45,31 @@ async function initiateMultipartUpload(s3, bucket, key) {
   return uploadId;
 }
 
+async function handleMultipartUpload(s3, bucket, oid, size) {
+  const uploadId = await initiateMultipartUpload(s3, bucket, oid);
+  const partCount = Math.ceil(size / PART_SIZE);
+
+  const partUrls = await Promise.all(
+    Array.from({ length: partCount }, (_, i) =>
+      getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
+    )
+  );
+
+  const completeUrl = await getSignedUrlForCompletion(
+    s3,
+    bucket,
+    oid,
+    uploadId
+  );
+
+  return {
+    uploadId,
+    partUrls,
+    completeUrl,
+    partCount,
+  };
+}
+
 async function getSignedUrlForPart(s3, bucket, key, uploadId, partNumber) {
   return sign(
     s3,
@@ -58,6 +83,7 @@ async function getSignedUrlForPart(s3, bucket, key, uploadId, partNumber) {
 async function getSignedUrlForCompletion(s3, bucket, key, uploadId) {
   return sign(s3, bucket, key, "POST", `uploadId=${uploadId}&`);
 }
+
 async function fetch(req, env) {
   try {
     const url = new URL(req.url);
@@ -106,37 +132,22 @@ async function fetch(req, env) {
       objects.map(async ({ oid, size }) => {
         try {
           if (operation === "upload" && size > PART_SIZE) {
-            // initiate multipart upload
-            const uploadId = await initiateMultipartUpload(s3, bucket, oid);
-            const partCount = Math.ceil(size / PART_SIZE);
-
-            // generate signed URLs for all parts
-            const partUrls = await Promise.all(
-              Array.from({ length: partCount }, (_, i) =>
-                getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
-              )
-            );
-
-            // generate signed URL for completing the multipart upload
-            const completeUrl = await getSignedUrlForCompletion(
-              s3,
-              bucket,
-              oid,
-              uploadId
-            );
+            const { uploadId, partUrls, completeUrl, partCount } =
+              await handleMultipartUpload(s3, bucket, oid, size);
 
             return {
               oid,
               size,
               authenticated: true,
               actions: {
-                upload: {
-                  href: partUrls[0],
+                upload: partUrls.map((url, index) => ({
+                  href: url,
                   header: {
                     "Content-Type": "application/octet-stream",
                   },
                   expires_in: expires_in,
-                },
+                  partNumber: index + 1,
+                })),
                 verify: {
                   href: completeUrl,
                   header: {
@@ -145,9 +156,9 @@ async function fetch(req, env) {
                   expires_in: expires_in,
                 },
               },
-              error: {
-                code: 202,
-                message: "Large file detected, using multipart upload",
+              multipart: {
+                partSize: PART_SIZE,
+                partCount: partCount,
               },
             };
           } else {
