@@ -102,93 +102,93 @@ async function fetch(req, env) {
 
     const { objects, operation } = await req.json();
 
-    const response = JSON.stringify({
-      transfer: "basic",
-      objects: await Promise.all(
-        objects.map(async ({ oid, size }) => {
-          try {
-            if (operation === "upload" && size > PART_SIZE) {
-              // initiate multipart upload
-              const uploadId = await initiateMultipartUpload(s3, bucket, oid);
-              const partCount = Math.ceil(size / PART_SIZE);
+    const processedObjects = await Promise.all(
+      objects.map(async ({ oid, size }) => {
+        try {
+          if (operation === "upload" && size > PART_SIZE) {
+            // initiate multipart upload
+            const uploadId = await initiateMultipartUpload(s3, bucket, oid);
+            const partCount = Math.ceil(size / PART_SIZE);
 
-              // generate signed URLs for all parts
-              const partUrls = await Promise.all(
-                Array.from({ length: partCount }, (_, i) =>
-                  getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
-                )
-              );
+            // generate signed URLs for all parts
+            const partUrls = await Promise.all(
+              Array.from({ length: partCount }, (_, i) =>
+                getSignedUrlForPart(s3, bucket, oid, uploadId, i + 1)
+              )
+            );
 
-              // generate signed URL for completing the multipart upload
-              const completeUrl = await getSignedUrlForCompletion(
-                s3,
-                bucket,
-                oid,
-                uploadId
-              );
+            // generate signed URL for completing the multipart upload
+            const completeUrl = await getSignedUrlForCompletion(
+              s3,
+              bucket,
+              oid,
+              uploadId
+            );
 
-              return {
-                oid,
-                size,
-                authenticated: true,
-                actions: {
-                  upload: {
-                    href: partUrls[0],
-                    header: {
-                      "Content-Type": "application/octet-stream",
-                    },
-                    expires_in: expires_in,
-                  },
-                  verify: {
-                    href: completeUrl,
-                    header: {
-                      "Content-Type": "application/xml",
-                    },
-                    expires_in: expires_in,
-                  },
-                },
-                error: {
-                  code: 202,
-                  message: "Large file detected, using multipart upload",
-                },
-              };
-            } else {
-              const href = await sign(
-                s3,
-                bucket,
-                oid,
-                operation === "upload" ? "PUT" : "GET"
-              );
-              return {
-                oid,
-                size,
-                authenticated: true,
-                actions: {
-                  [operation]: {
-                    href,
-                    header: {
-                      "Content-Type":
-                        operation === "upload"
-                          ? "application/octet-stream"
-                          : "",
-                    },
-                    expires_in,
-                  },
-                },
-              };
-            }
-          } catch (error) {
-            console.error(`Error processing object ${oid}:`, error);
             return {
               oid,
               size,
+              authenticated: true,
+              actions: {
+                upload: {
+                  href: partUrls[0],
+                  header: {
+                    "Content-Type": "application/octet-stream",
+                  },
+                  expires_in: expires_in,
+                },
+                verify: {
+                  href: completeUrl,
+                  header: {
+                    "Content-Type": "application/xml",
+                  },
+                  expires_in: expires_in,
+                },
+              },
               error: {
-                message: "Internal server error processing object",
+                code: 202,
+                message: "Large file detected, using multipart upload",
+              },
+            };
+          } else {
+            const href = await sign(
+              s3,
+              bucket,
+              oid,
+              operation === "upload" ? "PUT" : "GET"
+            );
+            return {
+              oid,
+              size,
+              authenticated: true,
+              actions: {
+                [operation]: {
+                  href,
+                  header: {
+                    "Content-Type":
+                      operation === "upload" ? "application/octet-stream" : "",
+                  },
+                  expires_in,
+                },
               },
             };
           }
-        })
-      ),
+        } catch (error) {
+          console.error(`Error processing object ${oid}:`, error);
+          return {
+            oid,
+            size,
+            error: {
+              message: "Internal server error processing object",
+            },
+          };
+        }
+      })
+    );
+
+    const response = JSON.stringify({
+      transfer: "basic",
+      objects: processedObjects,
     });
 
     return new Response(response, {
