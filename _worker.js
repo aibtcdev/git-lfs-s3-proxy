@@ -200,10 +200,19 @@ async function fetch(req, env) {
     });
   } catch (error) {
     console.error("Unexpected error:", error);
-    return new Response(JSON.stringify({ message: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    if (error instanceof Response) {
+      // handle errors thrown as Response objects (e.g., 401, 400)
+      return error;
+    } else if (error.name === "AbortError") {
+      return new Response("Request timed out", { status: 504 });
+    } else if (error.name === "TypeError") {
+      return new Response("Bad request format", { status: 400 });
+    } else if (error.message.includes("NetworkError")) {
+      return new Response("Network error occurred", { status: 503 });
+    } else {
+      // generic server error for unhandled cases
+      return new Response("Internal server error", { status: 500 });
+    }
   }
 }
 
