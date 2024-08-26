@@ -64,16 +64,17 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
 
   try {
     const signedUrl = await sign(s3, bucket, key, "POST", "uploads=");
+    const encodedUrl = encodeURI(signedUrl);
+
     console.log("Initiating multipart upload request:", {
       method: "POST",
-      url: signedUrl,
+      signedUrl,
+      encodedUrl,
       headers: {
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "Content-Type": "application/octet-stream",
       },
     });
-
-    const encodedUrl = encodeURI(signedUrl);
 
     const response = await fetch(encodedUrl, {
       method: "POST",
@@ -81,6 +82,8 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "Content-Type": "application/octet-stream",
       },
+    }).catch((error) => {
+      console.error("Error in fetch for initiateMultipartUpload:", error);
     });
     const responseBody = await response.text();
 
