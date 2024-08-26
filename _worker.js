@@ -190,6 +190,11 @@ async function getSignedUrlForCompletion(s3, bucket, key, uploadId) {
 }
 
 async function fetch(req, env) {
+  console.log("=== request info ===", {
+    url: req.url,
+    method: req.method,
+    headers: Object.fromEntries(req.headers),
+  });
   try {
     const url = new URL(req.url);
 
@@ -215,7 +220,7 @@ async function fetch(req, env) {
       secretAccessKey: pass,
       region: "auto",
       service: "s3",
-      endpoint: "https://bucket.aibtc.dev",
+      endpoint: "https://bucket.aibtc.dev/aibtcdev-communications",
     };
 
     const segments = url.pathname.split("/").slice(1, -2);
@@ -254,6 +259,10 @@ async function fetch(req, env) {
       objects.map(async ({ oid, size }) => {
         try {
           if (operation === "upload" && size > PART_SIZE) {
+            console.log("Processing multipart upload for object:", {
+              oid,
+              size,
+            });
             const { uploadId, partUrls, completeUrl, partCount } =
               await handleMultipartUpload(s3, bucket, prefix, oid, size);
 
@@ -285,6 +294,10 @@ async function fetch(req, env) {
               },
             };
           } else {
+            console.log("Processing single part upload for object:", {
+              oid,
+              size,
+            });
             const href = await sign(
               s3,
               bucket,
@@ -341,6 +354,7 @@ async function fetch(req, env) {
     } else if (error.name === "AbortError") {
       return new Response("Request timed out", { status: 504 });
     } else if (error.name === "TypeError") {
+      console.log("TypeError: This is where it's exiting");
       return new Response("Bad request format", { status: 400 });
     } else if (error.message.includes("NetworkError")) {
       return new Response("Network error occurred", { status: 503 });
