@@ -6,7 +6,7 @@ const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for R2
 
 async function sign(s3, bucket, path, method, query = "") {
   const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
-  const encodedQuery = query ? `?${encodeURIComponent(query)}` : "";
+  const encodedQuery = query ? `?${query}` : "";
   const url = `https://${bucket}/${encodedPath}${encodedQuery}`;
 
   const info = {
@@ -63,8 +63,15 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
   console.log("=== initiateMultipartUpload ===", { bucket, key });
 
   try {
-    const signedUrl = await sign(s3, bucket, key, "POST", "uploads");
-    console.log(`Initiating multipart upload: POST ${signedUrl}`);
+    const signedUrl = await sign(s3, bucket, key, "POST", "uploads=");
+    console.log("Initiating multipart upload request:", {
+      method: "POST",
+      url: signedUrl,
+      headers: {
+        "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+        "Content-Type": "application/octet-stream",
+      },
+    });
 
     const response = await fetch(signedUrl, {
       method: "POST",
@@ -97,6 +104,9 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
       `Error in initiateMultipartUpload for bucket ${bucket}, key ${key}:`,
       error
     );
+    if (error.response) {
+      console.error("Response data:", await error.response.text());
+    }
     throw error;
   }
 }
