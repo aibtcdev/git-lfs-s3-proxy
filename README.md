@@ -167,3 +167,33 @@ You're now ready to [start using Git LFS](https://github.com/git-lfs/git-lfs#exa
       git fetch --all
       git lfs migrate import --everything --above=25MiB
       git push --all --force-with-lease
+
+## Operation Diagram
+
+```mermaidjs
+sequenceDiagram
+    participant Client as Git LFS Client
+    participant Fetch as fetch function
+    participant Parse as parseAuthorization
+    participant Handle as handleMultipartUpload
+    participant Initiate as initiateMultipartUpload
+    participant Sign as sign function
+    participant S3 as S3/R2 API
+
+    Client->>Fetch: POST /objects/batch
+    Fetch->>Parse: Parse Authorization Header
+    Parse-->>Fetch: Return credentials
+    Fetch->>Handle: For each large object
+    Handle->>Initiate: Start multipart upload
+    Initiate->>Sign: Generate signed URL
+    Sign-->>Initiate: Return signed URL
+    Initiate->>S3: POST initiate multipart upload
+    S3-->>Initiate: Return UploadId
+    Initiate-->>Handle: Return UploadId
+    Handle->>Sign: Generate part URLs
+    Sign-->>Handle: Return part URLs
+    Handle->>Sign: Generate complete URL
+    Sign-->>Handle: Return complete URL
+    Handle-->>Fetch: Return upload details
+    Fetch-->>Client: Return batch response
+```
