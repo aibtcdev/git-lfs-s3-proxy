@@ -21,15 +21,12 @@ async function sign(s3, bucket, path, method, query = "") {
   });
 
   // logging all in one place
-  console.log("=== sign function ===");
-  console.log(`s3: ${s3}`);
-  console.log(`bucket: ${bucket}`);
-  console.log(`path: ${path}`);
-  console.log(`method: ${method}`);
-  console.log(`query: ${query}`);
-  console.log(`url: ${url}`);
-  console.log(`info: ${info}`);
-  console.log(`signed URL: ${signed.url}`);
+  console.log(`=== sign function ===\n
+    s3: ${JSON.stringify(s3)}\n
+    bucket: ${bucket}, path: ${path}, method: ${method}, query: ${query}\n
+    url: ${url}\n
+    info: ${JSON.stringify(info)}\n
+    signed URL: ${signed.url}`);
 
   return signed.url;
 }
@@ -78,7 +75,9 @@ async function initiateMultipartUpload(s3, bucket, key) {
       console.error(`S3 error response: ${errorText}`);
       console.error(`Response headers:`, response.headers);
       throw new Error(
-        `S3 responded with status ${response.status}: ${errorText}, headers: ${response.headers}`
+        `S3 responded with status ${
+          response.status
+        }: ${errorText}, headers: ${JSON.stringify(response.headers)}`
       );
     }
 
@@ -217,9 +216,11 @@ async function fetch(req, env) {
     const prefix = segments.slice(bucketIdx + 1).join("/"); // 'aibtcdev-communications'
     const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
-    console.log(`Bucket: ${bucket}`);
-    console.log(`Prefix: ${prefix}`);
-    console.log(`Expires in: ${expires_in}`);
+    console.log(`=== fetch info ===\n
+      s3Options: ${JSON.stringify(s3Options)}\n
+      bucket: ${bucket}\n
+      prefix: ${prefix}\n
+      Expires in: ${expires_in}`);
 
     const { objects, operation } = await req.json();
 
