@@ -5,7 +5,7 @@ const EXPIRY = 3600;
 const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for R2
 
 async function sign(s3, bucket, path, method, query = "") {
-  const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
   const encodedQuery = query ? `?${query}` : "";
   const url = `https://${bucket}/${encodedPath}${encodedQuery}`;
 
@@ -88,6 +88,7 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
       status: response.status,
       headers: Object.fromEntries(response.headers),
       body: responseBody,
+      encodedUrl,
     });
 
     if (!response.ok) {
