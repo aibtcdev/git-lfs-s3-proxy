@@ -113,6 +113,16 @@ async function handleMultipartUpload(s3, bucket, key, size) {
       uploadId
     );
 
+    console.log("Multipart upload initialized:", {
+      uploadId,
+      partCount,
+      partUrls,
+      completeUrl,
+      s3,
+      bucket,
+      size,
+    });
+
     return {
       uploadId,
       partUrls,
@@ -197,6 +207,10 @@ async function fetch(req, env) {
     const prefix = segments.slice(bucketIdx + 1).join("/"); // 'aibtcdev-communications'
     const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
+    console.log(`Bucket: ${bucket}`);
+    console.log(`Prefix: ${prefix}`);
+    console.log(`Expires in: ${expires_in}`);
+
     const { objects, operation } = await req.json();
 
     const processedObjects = await Promise.all(
@@ -274,6 +288,15 @@ async function fetch(req, env) {
     const response = JSON.stringify({
       transfer: "basic",
       objects: processedObjects,
+    });
+
+    console.log(`Bucket: ${bucket}, Key: ${key}`);
+    console.log(`Signed URL: ${url}`);
+    console.log(`Request headers:`, {
+      method: "POST",
+      headers: {
+        "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+      },
     });
 
     return new Response(response, {
