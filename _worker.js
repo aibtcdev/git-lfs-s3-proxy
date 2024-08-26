@@ -73,7 +73,9 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
       },
     });
 
-    const response = await fetch(signedUrl, {
+    const encodedUrl = encodeURI(signedUrl);
+
+    const response = await fetch(encodedUrl, {
       method: "POST",
       headers: {
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
