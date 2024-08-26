@@ -63,20 +63,23 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
   console.log("=== initiateMultipartUpload ===", { bucket, key });
 
   try {
-    const url = await sign(s3, bucket, key, "POST", "uploads");
-    console.log(`Initiating multipart upload: POST ${url}`);
+    const signedUrl = await sign(s3, bucket, key, "POST", "uploads");
+    console.log(`Initiating multipart upload: POST ${signedUrl}`);
 
-    const response = await fetch(url, {
+    const response = await fetch(signedUrl, {
       method: "POST",
       headers: {
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+        "Content-Type": "application/octet-stream",
       },
     });
-
-    console.log(`Response status: ${response.status}`);
-    console.log(`Response headers:`, Object.fromEntries(response.headers));
     const responseBody = await response.text();
-    console.log(`Response body: ${responseBody}`);
+
+    console.log("=== Response Info ===", {
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: responseBody,
+    });
 
     if (!response.ok) {
       throw new Error(
@@ -301,15 +304,6 @@ async function fetch(req, env) {
     const response = JSON.stringify({
       transfer: "basic",
       objects: processedObjects,
-    });
-
-    console.log(`Bucket: ${bucket}, Key: ${key}`);
-    console.log(`Signed URL: ${url}`);
-    console.log(`Request headers:`, {
-      method: "POST",
-      headers: {
-        "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
-      },
     });
 
     return new Response(response, {
