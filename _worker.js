@@ -70,7 +70,7 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
     console.log("Initiating multipart upload request:", {
       method: "POST",
       signedUrl,
-      url,
+      url: url.toString(),
       // encodedUrl,
     });
 
@@ -83,6 +83,13 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
     }).catch((error) => {
       console.error("Error in fetch for initiateMultipartUpload:", error);
     });
+
+    if (!response.ok) {
+      throw new Error(
+        `R2 responded with status ${response.status}: ${responseBody}`
+      );
+    }
+
     const responseBody = await response.text();
 
     console.log("=== Response Info ===", {
@@ -91,12 +98,6 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
       body: responseBody,
       // encodedUrl,
     });
-
-    if (!response.ok) {
-      throw new Error(
-        `R2 responded with status ${response.status}: ${responseBody}`
-      );
-    }
 
     const uploadId = responseBody.match(/<UploadId>(.*?)<\/UploadId>/)[1];
     if (!uploadId) {
