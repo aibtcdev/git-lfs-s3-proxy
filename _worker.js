@@ -21,12 +21,16 @@ async function sign(s3, bucket, path, method, query = "") {
   });
 
   // logging all in one place
-  console.log(`=== sign function ===\n
-    s3: ${JSON.stringify(s3)}\n
-    bucket: ${bucket}, path: ${path}, method: ${method}, query: ${query}\n
-    url: ${url}\n
-    info: ${JSON.stringify(info)}\n
-    signed URL: ${signed.url}`);
+  console.log("=== sign function ===", {
+    s3: JSON.stringify(s3),
+    bucket,
+    path,
+    method,
+    query,
+    url,
+    info: JSON.stringify(info),
+    signedUrl: signed.url,
+  });
 
   return signed.url;
 }
@@ -51,17 +55,16 @@ function parseAuthorization(req) {
     throw new Response("Unable to decode authorization", { status: 400 });
   }
 
-  console.log(`=== parseAuthorization ===`);
-  console.log(`auth: ${auth}`);
-  console.log(`decoded: ${decoded}`);
-
   return { user: decoded.slice(0, index), pass: decoded.slice(index + 1) };
 }
 
-async function initiateMultipartUpload(s3, bucket, key) {
-  console.log("=== initiate multipart upload ===");
+async function initiateMultipartUpload(s3, bucket, prefix, oid) {
+  const key = `${prefix}/${oid}`;
+  console.log("=== initiateMultipartUpload ===", { bucket, key });
+
   try {
     const url = await sign(s3, bucket, key, "POST", "uploads");
+    console.log(`Initiating multipart upload: POST ${url}`);
 
     const response = await fetch(url, {
       method: "POST",
@@ -70,29 +73,21 @@ async function initiateMultipartUpload(s3, bucket, key) {
       },
     });
 
+    console.log(`Response status: ${response.status}`);
+    console.log(`Response headers:`, Object.fromEntries(response.headers));
+    const responseBody = await response.text();
+    console.log(`Response body: ${responseBody}`);
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`S3 error response: ${errorText}`);
-      console.error(`Response headers:`, response.headers);
       throw new Error(
-        `S3 responded with status ${
-          response.status
-        }: ${errorText}, headers: ${JSON.stringify(response.headers)}`
+        `S3 responded with status ${response.status}: ${responseBody}`
       );
     }
 
-    const xml = await response.text();
-    console.log(`S3 response:`, xml);
-
-    const uploadId = xml.match(/<UploadId>(.*?)<\/UploadId>/)[1];
+    const uploadId = responseBody.match(/<UploadId>(.*?)<\/UploadId>/)[1];
     if (!uploadId) {
       throw new Error("Failed to extract UploadId from S3 response");
     }
-
-    console.log(`bucket: ${bucket}`);
-    console.log(`key: ${key}`);
-    console.log(`uploadId: ${uploadId}`);
-
     return uploadId;
   } catch (error) {
     console.error(
@@ -103,22 +98,27 @@ async function initiateMultipartUpload(s3, bucket, key) {
   }
 }
 
-async function handleMultipartUpload(s3, bucket, key, size) {
-  console.log("=== handleMultipartUpload ===");
+async function handleMultipartUpload(s3, bucket, prefix, oid, size) {
+  console.log("=== handleMultipartUpload ===", {
+    bucket,
+    prefix,
+    oid,
+    size,
+  });
   try {
-    const uploadId = await initiateMultipartUpload(s3, bucket, key);
+    const uploadId = await initiateMultipartUpload(s3, bucket, prefix, oid);
     const partCount = Math.ceil(size / PART_SIZE);
 
     const partUrls = await Promise.all(
       Array.from({ length: partCount }, (_, i) =>
-        getSignedUrlForPart(s3, bucket, key, uploadId, i + 1)
+        getSignedUrlForPart(s3, bucket, `${prefix}/${oid}`, uploadId, i + 1)
       )
     );
 
     const completeUrl = await getSignedUrlForCompletion(
       s3,
       bucket,
-      key,
+      `${prefix}/${oid}`,
       uploadId
     );
 
@@ -127,9 +127,6 @@ async function handleMultipartUpload(s3, bucket, key, size) {
       partCount,
       partUrls,
       completeUrl,
-      s3,
-      bucket,
-      size,
     });
 
     return {
@@ -139,7 +136,10 @@ async function handleMultipartUpload(s3, bucket, key, size) {
       partCount,
     };
   } catch (error) {
-    console.error(`Error in handleMultipartUpload for ${key}:`, error);
+    console.error(
+      `Error in handleMultipartUpload for ${prefix}/${oid}:`,
+      error
+    );
     if (error.name === "AbortError") {
       throw new Error("Multipart upload initialization timed out");
     } else if (error.message.includes("AccessDenied")) {
@@ -152,7 +152,7 @@ async function handleMultipartUpload(s3, bucket, key, size) {
       );
     } else {
       throw new Error(
-        `Failed to initialize multipart upload: ${error.message}`
+        `Failed to initialize multipart upload, unknown error: ${error.message}`
       );
     }
   }
@@ -216,11 +216,14 @@ async function fetch(req, env) {
     const prefix = segments.slice(bucketIdx + 1).join("/"); // 'aibtcdev-communications'
     const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
-    console.log(`=== fetch info ===\n
-      s3Options: ${JSON.stringify(s3Options)}\n
-      bucket: ${bucket}\n
-      prefix: ${prefix}\n
-      Expires in: ${expires_in}`);
+    console.log("=== fetch ===", {
+      user,
+      pass,
+      s3Options: JSON.stringify(s3Options),
+      bucket,
+      prefix,
+      expires_in,
+    });
 
     const { objects, operation } = await req.json();
 
@@ -228,9 +231,8 @@ async function fetch(req, env) {
       objects.map(async ({ oid, size }) => {
         try {
           if (operation === "upload" && size > PART_SIZE) {
-            const key = `${prefix}/${oid}`;
             const { uploadId, partUrls, completeUrl, partCount } =
-              await handleMultipartUpload(s3, bucket, key, size);
+              await handleMultipartUpload(s3, bucket, prefix, oid, size);
 
             return {
               oid,
@@ -263,7 +265,7 @@ async function fetch(req, env) {
             const href = await sign(
               s3,
               bucket,
-              key,
+              `${prefix}/${oid}`,
               operation === "upload" ? "PUT" : "GET"
             );
             return {
