@@ -64,13 +64,13 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
 
   try {
     const signedUrl = await sign(s3, bucket, key, "POST", "uploads=");
-    const urlObj = new URL(signedUrl);
+    const url = new URL(signedUrl);
     // const encodedUrl = encodeURI(signedUrl);
 
     console.log("Initiating multipart upload request:", {
       method: "POST",
       signedUrl,
-      url: urlObj.toString(),
+      url,
       // encodedUrl,
     });
 
