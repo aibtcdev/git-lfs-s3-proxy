@@ -210,7 +210,13 @@ async function fetch(req, env) {
     }
 
     const { user, pass } = parseAuthorization(req);
-    let s3Options = { accessKeyId: user, secretAccessKey: pass };
+    let s3Options = {
+      accessKeyId: user,
+      secretAccessKey: pass,
+      region: "auto",
+      service: "s3",
+      endpoint: "https://bucket.aibtc.dev",
+    };
 
     const segments = url.pathname.split("/").slice(1, -2);
     let params = {};
