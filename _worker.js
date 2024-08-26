@@ -16,52 +16,56 @@ async function sign(s3, bucket, path, method, query = "") {
     },
   };
 
-  console.log(`Signing request: ${method} ${url}`);
-
   const signed = await s3.sign(new Request(url, info), {
     aws: { signQuery: true },
   });
 
-  console.log(`Signed URL: ${signed.url}`);
+  // logging all in one place
+  console.log("=== sign function ===");
+  console.log(`s3: ${s3}`);
+  console.log(`bucket: ${bucket}`);
+  console.log(`path: ${path}`);
+  console.log(`method: ${method}`);
+  console.log(`query: ${query}`);
+  console.log(`url: ${url}`);
+  console.log(`info: ${info}`);
+  console.log(`signed URL: ${signed.url}`);
+
   return signed.url;
 }
 
 function parseAuthorization(req) {
   const auth = req.headers.get("Authorization");
   if (!auth) {
-    throw new Response(null, { status: 401 });
+    throw new Response("Authorization header not found", { status: 401 });
   }
 
   const [scheme, encoded] = auth.split(" ");
   if (scheme !== "Basic" || !encoded) {
-    throw new Response(null, { status: 400 });
+    throw new Response("Invalid authorization scheme or credentials", {
+      status: 400,
+    });
   }
 
   const buffer = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
   const decoded = new TextDecoder().decode(buffer).normalize();
   const index = decoded.indexOf(":");
   if (index === -1 || /[\0-\x1F\x7F]/.test(decoded)) {
-    throw new Response(null, { status: 400 });
+    throw new Response("Unable to decode authorization", { status: 400 });
   }
+
+  console.log(`=== parseAuthorization ===`);
+  console.log(`auth: ${auth}`);
+  console.log(`decoded: ${decoded}`);
 
   return { user: decoded.slice(0, index), pass: decoded.slice(index + 1) };
 }
 
 async function initiateMultipartUpload(s3, bucket, key) {
+  console.log("=== initiate multipart upload ===");
   try {
     const url = await sign(s3, bucket, key, "POST", "uploads");
-    console.log(`Initiating multipart upload: POST ${url}`);
 
-    let newUrl = "";
-    try {
-      newUrl = new URL(url);
-    } catch (error) {
-      console.error(
-        `Error in initiateMultipartUpload for bucket ${bucket}, key ${key} for URL ${url}:`,
-        error
-      );
-      throw error;
-    }
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -74,7 +78,7 @@ async function initiateMultipartUpload(s3, bucket, key) {
       console.error(`S3 error response: ${errorText}`);
       console.error(`Response headers:`, response.headers);
       throw new Error(
-        `S3 responded with status ${response.status}: ${errorText}`
+        `S3 responded with status ${response.status}: ${errorText}, headers: ${response.headers}`
       );
     }
 
@@ -85,6 +89,11 @@ async function initiateMultipartUpload(s3, bucket, key) {
     if (!uploadId) {
       throw new Error("Failed to extract UploadId from S3 response");
     }
+
+    console.log(`bucket: ${bucket}`);
+    console.log(`key: ${key}`);
+    console.log(`uploadId: ${uploadId}`);
+
     return uploadId;
   } catch (error) {
     console.error(
@@ -96,6 +105,7 @@ async function initiateMultipartUpload(s3, bucket, key) {
 }
 
 async function handleMultipartUpload(s3, bucket, key, size) {
+  console.log("=== handleMultipartUpload ===");
   try {
     const uploadId = await initiateMultipartUpload(s3, bucket, key);
     const partCount = Math.ceil(size / PART_SIZE);
