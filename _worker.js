@@ -2,7 +2,7 @@ import { AwsClient } from "aws4fetch";
 
 const HOMEPAGE = "https://github.com/aibtcdev/git-lfs-s3-proxy";
 const EXPIRY = 3600;
-const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for S3
+const PART_SIZE = 5 * 1024 * 1024; // 5MB minimum part size for R2
 
 async function sign(s3, bucket, path, method, query = "") {
   const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
@@ -83,13 +83,13 @@ async function initiateMultipartUpload(s3, bucket, prefix, oid) {
 
     if (!response.ok) {
       throw new Error(
-        `S3 responded with status ${response.status}: ${responseBody}`
+        `R2 responded with status ${response.status}: ${responseBody}`
       );
     }
 
     const uploadId = responseBody.match(/<UploadId>(.*?)<\/UploadId>/)[1];
     if (!uploadId) {
-      throw new Error("Failed to extract UploadId from S3 response");
+      throw new Error("Failed to extract UploadId from R2 response");
     }
     return uploadId;
   } catch (error) {
@@ -146,9 +146,9 @@ async function handleMultipartUpload(s3, bucket, prefix, oid, size) {
     if (error.name === "AbortError") {
       throw new Error("Multipart upload initialization timed out");
     } else if (error.message.includes("AccessDenied")) {
-      throw new Error("Access denied. Check S3 credentials and permissions.");
+      throw new Error("Access denied. Check R2 credentials and permissions.");
     } else if (error.message.includes("NoSuchBucket")) {
-      throw new Error("S3 bucket not found. Check bucket name and region.");
+      throw new Error("R2 bucket not found. Check bucket name and region.");
     } else if (error.message.includes("NetworkError")) {
       throw new Error(
         "Network error. Check your internet connection and try again."
